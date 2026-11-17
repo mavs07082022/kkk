@@ -1,0 +1,922 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>GesturRGB Pro · 2-Hand Gesture Control</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --accent: #7c8aff;
+    --accent2: #ff6ec7;
+    --bg: #07070c;
+    --panel: #0f0f18;
+    --card: #14141f;
+    --border: #23233a;
+    --text: #e8e8f0;
+    --muted: #6e6e88;
+  }
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    overflow: hidden;
+  }
+  .app { display: flex; width: 100vw; height: 100vh; }
+
+  /* ---------------- CAMERA PANEL ---------------- */
+  .camera-panel {
+    flex: 1; position: relative; background: #000;
+    overflow: hidden; display: flex; align-items: center; justify-content: center;
+  }
+  #webcam {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    object-fit: cover; transform: scaleX(-1);
+    filter: brightness(0.85) contrast(1.05);
+  }
+  #overlay {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    transform: scaleX(-1); pointer-events: none; z-index: 4;
+  }
+
+  /* ---------------- 3D DIAMOND ---------------- */
+  .diamond-stage {
+    position: absolute; top: 50%; left: 50%;
+    width: 0; height: 0; z-index: 10;
+    pointer-events: none; perspective: 1200px;
+    transition: transform 0.15s ease-out;
+    transform-origin: center;
+  }
+  .diamond-3d {
+    position: absolute; top: 0; left: 0;
+    width: 220px; height: 220px;
+    margin-left: -110px; margin-top: -110px;
+    transform-style: preserve-3d;
+    animation: spin3d 12s linear infinite;
+  }
+  @keyframes spin3d {
+    0%   { transform: rotateX(15deg) rotateY(0deg)   rotateZ(0deg); }
+    100% { transform: rotateX(15deg) rotateY(360deg) rotateZ(360deg); }
+  }
+  .ring {
+    position: absolute; inset: 0; border-radius: 50%;
+    border: 2px solid rgba(124,138,255,0.35);
+    transform-style: preserve-3d;
+  }
+  .ring.r1 {
+    animation: ringRotate1 6s linear infinite;
+    border-color: var(--ring-color, #7c8aff);
+    box-shadow: 0 0 24px var(--ring-color, #7c8aff);
+  }
+  .ring.r2 {
+    inset: 18%; border-width: 2px; border-style: dashed;
+    animation: ringRotate2 9s linear infinite reverse;
+    border-color: var(--ring-color2, #ff6ec7);
+  }
+  .ring.r3 {
+    inset: 32%; border-width: 1px;
+    animation: ringRotate3 4s linear infinite;
+    border-color: var(--ring-color, #fff);
+  }
+  @keyframes ringRotate1 {
+    0% { transform: rotateX(70deg) rotateZ(0deg); }
+    100% { transform: rotateX(70deg) rotateZ(360deg); }
+  }
+  @keyframes ringRotate2 {
+    0% { transform: rotateY(75deg) rotateZ(0deg); }
+    100% { transform: rotateY(75deg) rotateZ(360deg); }
+  }
+  @keyframes ringRotate3 {
+    0% { transform: rotateX(0deg) rotateY(45deg) rotateZ(0deg); }
+    100% { transform: rotateX(360deg) rotateY(45deg) rotateZ(0deg); }
+  }
+  .gem {
+    position: absolute; top: 50%; left: 50%;
+    width: 46px; height: 46px;
+    margin: -23px 0 0 -23px;
+    transform: rotate(45deg); border-radius: 8px;
+    background: var(--gem-color, #222);
+    border: 2px solid rgba(255,255,255,0.4);
+    box-shadow: 0 0 30px var(--gem-color, #222),
+                inset 0 0 12px rgba(255,255,255,0.35);
+    animation: gemPulse 2s ease-in-out infinite;
+  }
+  @keyframes gemPulse {
+    0%,100% { transform: rotate(45deg) scale(1); }
+    50%     { transform: rotate(45deg) scale(1.12); }
+  }
+  .particles {
+    position: absolute; inset: -140px;
+    animation: particleOrbit 14s linear infinite;
+  }
+  .particles span {
+    position: absolute; width: 4px; height: 4px;
+    border-radius: 50%;
+    background: var(--gem-color, #fff);
+    box-shadow: 0 0 8px var(--gem-color, #fff);
+    opacity: 0.8;
+  }
+  @keyframes particleOrbit {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+  .gesture-label {
+    position: absolute; top: 130px; left: 50%;
+    transform: translateX(-50%);
+    white-space: nowrap; font-size: 12px; letter-spacing: 2px;
+    text-transform: uppercase; color: rgba(255,255,255,0.85);
+    background: rgba(0,0,0,0.5); padding: 4px 12px;
+    border-radius: 20px; border: 1px solid rgba(255,255,255,0.15);
+    opacity: 0; transition: opacity 0.3s;
+  }
+  .gesture-label.show { opacity: 1; }
+
+  /* ---------------- SIDE PANEL ---------------- */
+  .panel {
+    width: 400px; background: var(--panel);
+    border-left: 1px solid var(--border);
+    padding: 24px 22px;
+    display: flex; flex-direction: column; gap: 14px;
+    overflow-y: auto;
+  }
+  .panel h1 {
+    font-size: 24px; font-weight: 700; letter-spacing: -0.6px;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .subtitle { font-size: 12px; color: var(--muted); margin-top: -8px; }
+  .status {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12px; color: var(--muted);
+    background: var(--card); padding: 10px 14px;
+    border-radius: 10px; border: 1px solid var(--border);
+  }
+  .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: #ff4d4d; box-shadow: 0 0 8px #ff4d4d;
+    transition: all 0.3s;
+  }
+  .dot.on {
+    background: #4dff88; box-shadow: 0 0 10px #4dff88;
+  }
+  .section-title {
+    font-size: 11px; letter-spacing: 1.5px;
+    text-transform: uppercase; color: var(--muted);
+    margin-top: 6px;
+  }
+  .gesture-grid {
+    display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;
+  }
+  .gcard {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 10px; padding: 9px 10px;
+    transition: all 0.2s ease;
+    text-align: center;
+  }
+  .gcard.active {
+    border-color: var(--accent);
+    box-shadow: 0 0 18px rgba(124,138,255,0.3);
+  }
+  .gcard .emoji { font-size: 18px; }
+  .gcard .name {
+    font-size: 10px; font-weight: 600;
+    color: #fff; margin-top: 4px;
+  }
+  .gcard .desc {
+    font-size: 9px; color: var(--muted);
+    margin-top: 2px; line-height: 1.3;
+  }
+  .bright-box {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 12px; padding: 12px 14px;
+  }
+  .bright-head {
+    display: flex; justify-content: space-between;
+    font-size: 12px; color: var(--muted); margin-bottom: 10px;
+  }
+  .bright-head span:last-child {
+    color: #fff; font-weight: 700; font-size: 14px;
+  }
+  input[type="range"] {
+    -webkit-appearance: none; width: 100%; height: 6px;
+    border-radius: 3px;
+    background: linear-gradient(90deg, #7c8aff, #ff6ec7);
+    outline: none; cursor: pointer;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 20px; height: 20px;
+    border-radius: 50%; background: #fff;
+    border: 3px solid var(--accent);
+    box-shadow: 0 0 15px rgba(124,138,255,0.6);
+  }
+  .hands-status { display: flex; gap: 8px; flex-wrap: wrap; }
+  .hand-chip {
+    flex: 1; min-width: 120px;
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 10px; padding: 8px 12px;
+    font-size: 11px; color: var(--muted);
+  }
+  .hand-chip b { color: #fff; display: block; margin-top: 2px; }
+  .hand-chip.combo {
+    border-color: var(--accent2);
+    box-shadow: 0 0 12px rgba(255,110,199,0.2);
+  }
+  .hand-chip.combo b { color: var(--accent2); }
+  .toast {
+    position: fixed; bottom: 24px; left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: rgba(20,20,31,0.95);
+    border: 1px solid var(--border);
+    padding: 10px 18px; border-radius: 12px;
+    font-size: 12px; color: #fff; opacity: 0;
+    transition: all 0.3s; z-index: 999; pointer-events: none;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  @media (max-width: 1000px) {
+    .app { flex-direction: column; }
+    .panel { width: 100%; height: 45vh; }
+    .camera-panel { height: 55vh; }
+  }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <!-- CAMERA -->
+  <div class="camera-panel">
+    <video id="webcam" autoplay playsinline muted></video>
+    <canvas id="overlay"></canvas>
+
+    <!-- 3D DIAMOND STAGE -->
+    <div class="diamond-stage" id="diamondStage">
+      <div class="diamond-3d" id="diamond3d">
+        <div class="ring r1"></div>
+        <div class="ring r2"></div>
+        <div class="ring r3"></div>
+        <div class="particles" id="particles"></div>
+        <div class="gem" id="gem"></div>
+      </div>
+      <div class="gesture-label" id="gestureLabel">IDLE</div>
+    </div>
+  </div>
+
+  <!-- SIDE PANEL -->
+  <div class="panel">
+    <h1>GesturRGB Pro</h1>
+    <p class="subtitle">2-Hand ML Gesture → ESP32 RGB</p>
+
+    <div class="status">
+      <span class="dot" id="dot"></span>
+      <span id="statusText">Connecting to ESP32…</span>
+    </div>
+
+    <div class="hands-status">
+      <div class="hand-chip">Left hand<b id="leftHand">—</b></div>
+      <div class="hand-chip">Right hand<b id="rightHand">—</b></div>
+    </div>
+    <div class="hands-status">
+      <div class="hand-chip combo" style="flex:1">Both hands<b id="comboHand">—</b></div>
+    </div>
+
+    <div class="section-title">Single-Hand Gestures</div>
+    <div class="gesture-grid">
+      <div class="gcard" data-g="open">
+        <div class="emoji">🖐️</div>
+        <div class="name">Open Palm</div>
+        <div class="desc">Rainbow</div>
+      </div>
+      <div class="gcard" data-g="peace">
+        <div class="emoji">✌️</div>
+        <div class="name">Peace</div>
+        <div class="desc">White flash</div>
+      </div>
+      <div class="gcard" data-g="thumbsup">
+        <div class="emoji">👍</div>
+        <div class="name">Thumbs Up</div>
+        <div class="desc">Warm</div>
+      </div>
+      <div class="gcard" data-g="point">
+        <div class="emoji">☝️</div>
+        <div class="name">Point</div>
+        <div class="desc">Cold blue</div>
+      </div>
+      <div class="gcard" data-g="ok">
+        <div class="emoji">👌</div>
+        <div class="name">OK</div>
+        <div class="desc">Purple</div>
+      </div>
+      <div class="gcard" data-g="rock">
+        <div class="emoji">🤘</div>
+        <div class="name">Rock</div>
+        <div class="desc">Crimson</div>
+      </div>
+      <div class="gcard" data-g="hangloose">
+        <div class="emoji">🤙</div>
+        <div class="name">Hang Loose</div>
+        <div class="desc">Teal</div>
+      </div>
+      <div class="gcard" data-g="pinch">
+        <div class="emoji">🤏</div>
+        <div class="name">Pinch</div>
+        <div class="desc">Toggle rainbow</div>
+      </div>
+    </div>
+
+    <div class="section-title">Both-Hand Combos</div>
+    <div class="gesture-grid">
+      <div class="gcard" data-g="both_open">
+        <div class="emoji">🖐️🖐️</div>
+        <div class="name">Both Open</div>
+        <div class="desc">Brightness up</div>
+      </div>
+      <div class="gcard" data-g="both_peace">
+        <div class="emoji">✌️✌️</div>
+        <div class="name">Both Peace</div>
+        <div class="desc">Rainbow on</div>
+      </div>
+      <div class="gcard" data-g="both_point">
+        <div class="emoji">☝️☝️</div>
+        <div class="name">Both Point</div>
+        <div class="desc">Reset</div>
+      </div>
+      <div class="gcard" data-g="zoom">
+        <div class="emoji">🤲</div>
+        <div class="name">Zoom</div>
+        <div class="desc">Spread = bigger</div>
+      </div>
+    </div>
+
+    <div class="section-title">Brightness / Zoom</div>
+    <div class="bright-box">
+      <div class="bright-head">
+        <span>Level</span>
+        <span id="brightVal">100%</span>
+      </div>
+      <input type="range" id="brightSlider" min="0" max="100" value="100" />
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- MediaPipe -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+
+<script>
+/* ============================================================
+ * CONFIG
+ * ============================================================ */
+const ESP32_IP = '192.168.100.134';   // <-- CHANGE THIS to ESP32 IP
+const WS_PORT  = 81;
+
+const PALETTE = [
+  { r: 255, g: 0,   b: 0   },
+  { r: 255, g: 165, b: 0   },
+  { r: 255, g: 255, b: 0   },
+  { r: 0,   g: 255, b: 0   },
+  { r: 0,   g: 255, b: 255 },
+  { r: 0,   g: 0,   b: 255 },
+  { r: 128, g: 0,   b: 255 },
+  { r: 255, g: 0,   b: 255 },
+];
+
+/* ============================================================
+ * DOM
+ * ============================================================ */
+const video       = document.getElementById('webcam');
+const overlay     = document.getElementById('overlay');
+const octx        = overlay.getContext('2d');
+const gem         = document.getElementById('gem');
+const diamond3d   = document.getElementById('diamond3d');
+const diamondStage= document.getElementById('diamondStage');
+const gestureLabel= document.getElementById('gestureLabel');
+const dot         = document.getElementById('dot');
+const statusText  = document.getElementById('statusText');
+const leftHandEl  = document.getElementById('leftHand');
+const rightHandEl = document.getElementById('rightHand');
+const comboHandEl = document.getElementById('comboHand');
+const brightSlider= document.getElementById('brightSlider');
+const brightVal   = document.getElementById('brightVal');
+const toastEl     = document.getElementById('toast');
+const particlesEl = document.getElementById('particles');
+
+for (let i = 0; i < 18; i++) {
+  const s = document.createElement('span');
+  const angle = (i / 18) * Math.PI * 2;
+  const radius = 90 + Math.random() * 30;
+  s.style.left = `calc(50% + ${Math.cos(angle) * radius}px)`;
+  s.style.top  = `calc(50% + ${Math.sin(angle) * radius}px)`;
+  s.style.animation = `gemPulse ${1.5 + Math.random() * 2}s ease-in-out infinite`;
+  particlesEl.appendChild(s);
+}
+
+/* ============================================================
+ * STATE
+ * ============================================================ */
+let ws = null;
+let currentColor = { r: 255, g: 0, b: 0 };
+let colorIndex = 0;
+let lastColorChange = 0;
+let brightness = 1.0;
+let lastSent = { r: -1, g: -1, b: -1 };
+let rainbowActive = false;
+
+let diamondScale = 1.0;
+let zoomActive = false;
+let zoomLastRatio = null;
+
+const handState = {
+  Left:  { gesture: 'none', stable: 'none', holdStart: 0 },
+  Right: { gesture: 'none', stable: 'none', holdStart: 0 },
+};
+
+/* ============================================================
+ * WEBSOCKET
+ * ============================================================ */
+function connectWS() {
+  ws = new WebSocket(`ws://${ESP32_IP}:${WS_PORT}`);
+  ws.onopen = () => {
+    dot.classList.add('on');
+    statusText.textContent = `Connected · ${ESP32_IP}`;
+    sendRGB(currentColor, brightness, true);
+  };
+  ws.onclose = () => {
+    dot.classList.remove('on');
+    statusText.textContent = 'Disconnected — retrying…';
+    setTimeout(connectWS, 2500);
+  };
+  ws.onerror = () => ws.close();
+}
+
+function sendRGB(color, bright, force = false) {
+  const r = Math.round(color.r * bright);
+  const g = Math.round(color.g * bright);
+  const b = Math.round(color.b * bright);
+  if (!force && r === lastSent.r && g === lastSent.g && b === lastSent.b) return;
+  lastSent = { r, g, b };
+  if (ws && ws.readyState === WebSocket.OPEN) ws.send(`${r},${g},${b}`);
+}
+
+/* ============================================================
+ * UTILS
+ * ============================================================ */
+const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+
+function handSize(lm) {
+  const d1 = dist(lm[0], lm[9]);
+  const d2 = dist(lm[5], lm[17]);
+  return (d1 + d2) / 2 + 1e-6;
+}
+
+/* ============================================================
+ * GESTURE DETECTION (no fist)
+ * ============================================================ */
+function detectGesture(lm) {
+  if (!lm || lm.length < 21) return 'none';
+
+  const wrist = lm[0];
+  const thumbTip = lm[4];
+  const indexTip = lm[8];
+  const middleTip = lm[12];
+  const ringTip = lm[16];
+  const pinkyTip = lm[20];
+
+  const indexMcp = lm[5];
+  const middleMcp = lm[9];
+  const ringMcp = lm[13];
+  const pinkyMcp = lm[17];
+
+  const size = handSize(lm);
+
+  const ext = {
+    index:  dist(wrist, indexTip)  > dist(wrist, indexMcp)  * 1.15,
+    middle: dist(wrist, middleTip) > dist(wrist, middleMcp) * 1.15,
+    ring:   dist(wrist, ringTip)   > dist(wrist, ringMcp)   * 1.15,
+    pinky:  dist(wrist, pinkyTip)  > dist(wrist, pinkyMcp)  * 1.15,
+  };
+
+  const thumbExtended = dist(thumbTip, indexMcp) > size * 0.55;
+  const pinchRatio = dist(thumbTip, indexTip) / size;
+
+  if (pinchRatio < 0.45 && ext.middle && ext.ring && ext.pinky) return 'ok';
+  if (ext.index && !ext.middle && !ext.ring && ext.pinky) return 'rock';
+  if (thumbExtended && !ext.index && !ext.middle && !ext.ring && ext.pinky) return 'hangloose';
+  if (pinchRatio < 0.55 && !ext.middle && !ext.ring && !ext.pinky) return 'pinch';
+  if (ext.index && ext.middle && !ext.ring && !ext.pinky) return 'peace';
+  if (ext.index && !ext.middle && !ext.ring && !ext.pinky) return 'point';
+  if (thumbExtended && !ext.index && !ext.middle && !ext.ring && !ext.pinky) {
+    if (thumbTip.y < wrist.y - size * 0.2) return 'thumbsup';
+  }
+
+  const openCount = [ext.index, ext.middle, ext.ring, ext.pinky].filter(Boolean).length;
+  if (openCount >= 4) return 'open';
+
+  return 'none';
+}
+
+/* ============================================================
+ * DRAW HANDS — X-RAY STYLE
+ * ============================================================ */
+const CONNECTIONS = [
+  [0,1],[1,2],[2,3],[3,4],
+  [0,5],[5,6],[6,7],[7,8],
+  [0,9],[9,10],[10,11],[11,12],
+  [0,13],[13,14],[14,15],[15,16],
+  [0,17],[17,18],[18,19],[19,20],
+  [5,9],[9,13],[13,17],
+];
+
+function drawHands(allLandmarks) {
+  octx.clearRect(0, 0, overlay.width, overlay.height);
+  if (!allLandmarks || allLandmarks.length === 0) return;
+
+  const w = overlay.width;
+  const h = overlay.height;
+
+  for (const hd of allLandmarks) {
+    const lm = hd.landmarks;
+
+    // X-ray glow effect
+    octx.shadowColor = 'rgba(180, 240, 255, 0.95)';
+    octx.shadowBlur = 18;
+
+    // Bones: soft white glow + cyan inner
+    octx.lineCap = 'round';
+    octx.lineJoin = 'round';
+
+    // outer glow pass (thicker, translucent)
+    octx.lineWidth = 6;
+    octx.strokeStyle = 'rgba(180, 240, 255, 0.25)';
+    for (const [i, j] of CONNECTIONS) {
+      octx.beginPath();
+      octx.moveTo(lm[i].x * w, lm[i].y * h);
+      octx.lineTo(lm[j].x * w, lm[j].y * h);
+      octx.stroke();
+    }
+
+    // bright inner bone (thin, near-white)
+    octx.lineWidth = 2;
+    octx.strokeStyle = 'rgba(230, 250, 255, 0.95)';
+    for (const [i, j] of CONNECTIONS) {
+      octx.beginPath();
+      octx.moveTo(lm[i].x * w, lm[i].y * h);
+      octx.lineTo(lm[j].x * w, lm[j].y * h);
+      octx.stroke();
+    }
+
+    // joints: glowing dots
+    for (let i = 0; i < lm.length; i++) {
+      const p = lm[i];
+      // outer halo
+      octx.beginPath();
+      octx.arc(p.x * w, p.y * h, 6, 0, Math.PI * 2);
+      octx.fillStyle = 'rgba(180, 240, 255, 0.18)';
+      octx.fill();
+
+      // inner core
+      octx.beginPath();
+      octx.arc(p.x * w, p.y * h, 3, 0, Math.PI * 2);
+      octx.fillStyle = 'rgba(240, 255, 255, 1)';
+      octx.fill();
+    }
+
+    // fingertips get an extra bright spot
+    const tips = [4, 8, 12, 16, 20];
+    for (const t of tips) {
+      const p = lm[t];
+      octx.beginPath();
+      octx.arc(p.x * w, p.y * h, 5, 0, Math.PI * 2);
+      octx.fillStyle = 'rgba(140, 220, 255, 0.9)';
+      octx.fill();
+    }
+
+    octx.shadowBlur = 0;
+  }
+}
+
+/* ============================================================
+ * PER-HAND GESTURE PROCESSING
+ * ============================================================ */
+function processHand(handedness, lm) {
+  const s = handState[handedness];
+  if (!s) return;
+  const g = detectGesture(lm);
+  const now = performance.now();
+
+  if (g !== s.gesture) {
+    if (s.holdStart === 0) s.holdStart = now;
+    else if (now - s.holdStart > 180) {
+      s.gesture = g;
+      s.holdStart = 0;
+      if (g !== s.stable) {
+        s.stable = g;
+        onGestureConfirmed(handedness, g);
+      }
+    }
+  } else {
+    s.holdStart = 0;
+  }
+}
+
+function onGestureConfirmed(handedness, gesture) {
+  showToast(`${handedness}: ${gesture.toUpperCase()}`);
+
+  document.querySelectorAll('.gcard').forEach(c => {
+    if (c.dataset.g === gesture && !c.dataset.g.startsWith('both') && c.dataset.g !== 'zoom') {
+      c.classList.add('active');
+    }
+  });
+
+  switch (gesture) {
+    case 'open':
+      rainbowActive = true;
+      lastColorChange = 0;
+      break;
+    case 'thumbsup':
+      currentColor = { r: 255, g: 140, b: 20 };
+      rainbowActive = false;
+      updateDiamondColors();
+      sendRGB(currentColor, brightness);
+      break;
+    case 'point':
+      currentColor = { r: 30, g: 120, b: 255 };
+      rainbowActive = false;
+      updateDiamondColors();
+      sendRGB(currentColor, brightness);
+      break;
+    case 'ok':
+      currentColor = { r: 160, g: 60, b: 255 };
+      rainbowActive = false;
+      updateDiamondColors();
+      sendRGB(currentColor, brightness);
+      break;
+    case 'rock':
+      currentColor = { r: 220, g: 20, b: 60 };
+      rainbowActive = false;
+      updateDiamondColors();
+      sendRGB(currentColor, brightness);
+      break;
+    case 'hangloose':
+      currentColor = { r: 0, g: 200, b: 180 };
+      rainbowActive = false;
+      updateDiamondColors();
+      sendRGB(currentColor, brightness);
+      break;
+    case 'peace':
+      flashWhite();
+      break;
+    case 'pinch':
+      rainbowActive = !rainbowActive;
+      break;
+  }
+}
+
+function flashWhite() {
+  const prev = { ...currentColor };
+  currentColor = { r: 255, g: 255, b: 255 };
+  updateDiamondColors();
+  sendRGB(currentColor, brightness, true);
+  setTimeout(() => {
+    currentColor = prev;
+    updateDiamondColors();
+    sendRGB(currentColor, brightness, true);
+  }, 300);
+}
+
+/* ============================================================
+ * COMBO + ZOOM
+ * ============================================================ */
+function processCombo(leftHand, rightHand) {
+  if (!leftHand || !rightHand) {
+    zoomActive = false;
+    zoomLastRatio = null;
+    comboHandEl.textContent = '—';
+    document.querySelectorAll('.gcard[data-g^="both"], .gcard[data-g="zoom"]').forEach(c => c.classList.remove('active'));
+    return;
+  }
+
+  const gL = leftHand.stable;
+  const gR = rightHand.stable;
+
+  if (gL === 'open' && gR === 'open') {
+    setCombo('both_open');
+    brightness = clamp(brightness + 0.03, 0, 1);
+    updateBrightnessUI();
+    return;
+  }
+  if (gL === 'peace' && gR === 'peace') {
+    setCombo('both_peace');
+    rainbowActive = true;
+    lastColorChange = 0;
+    return;
+  }
+  if (gL === 'point' && gR === 'point') {
+    setCombo('both_point');
+    currentColor = { r: 255, g: 255, b: 255 };
+    brightness = 1.0;
+    diamondScale = 1.0;
+    rainbowActive = false;
+    updateBrightnessUI();
+    updateDiamondColors();
+    sendRGB(currentColor, brightness, true);
+    return;
+  }
+
+  // ZOOM: two hands spread/pinch
+  setCombo('zoom');
+  const lc = leftHand.landmarks[9];
+  const rc = rightHand.landmarks[9];
+  const d = dist(lc, rc);
+  const avgSize = (handSize(leftHand.landmarks) + handSize(rightHand.landmarks)) / 2;
+  const ratio = d / avgSize;
+
+  if (!zoomActive) {
+    zoomActive = true;
+    zoomLastRatio = ratio;
+    return;
+  }
+  if (zoomLastRatio === null) { zoomLastRatio = ratio; return; }
+  if (Math.abs(ratio - zoomLastRatio) < 0.03) return;
+  zoomLastRatio = ratio;
+
+  const lo = 1.2, hi = 3.5;
+  const raw = clamp((ratio - lo) / (hi - lo), 0, 1);
+  brightness = clamp(lerp(brightness, raw, 0.15), 0, 1);
+  diamondScale = 0.6 + brightness * 1.2;
+
+  diamondStage.style.transform = `scale(${diamondScale.toFixed(3)})`;
+  brightSlider.value = Math.round(brightness * 100);
+  brightVal.textContent = Math.round(brightness * 100) + '%';
+  updateDiamondColors();
+  sendRGB(currentColor, brightness);
+}
+
+function setCombo(key) {
+  document.querySelectorAll('.gcard[data-g^="both"], .gcard[data-g="zoom"]').forEach(c => {
+    if (c.dataset.g !== key) c.classList.remove('active');
+  });
+  const card = document.querySelector(`.gcard[data-g="${key}"]`);
+  if (card) card.classList.add('active');
+  comboHandEl.textContent = key.toUpperCase().replace('BOTH_', 'BOTH ');
+}
+
+function updateBrightnessUI() {
+  brightSlider.value = Math.round(brightness * 100);
+  brightVal.textContent = Math.round(brightness * 100) + '%';
+  updateDiamondColors();
+  sendRGB(currentColor, brightness);
+}
+
+/* ============================================================
+ * RAINBOW
+ * ============================================================ */
+function tickRainbow(now) {
+  if (!rainbowActive) return;
+  if (now - lastColorChange > 260) {
+    colorIndex = (colorIndex + 1) % PALETTE.length;
+    currentColor = PALETTE[colorIndex];
+    lastColorChange = now;
+    updateDiamondColors();
+    sendRGB(currentColor, brightness);
+  }
+}
+
+/* ============================================================
+ * DIAMOND COLORS + UI
+ * ============================================================ */
+function updateDiamondColors() {
+  const r = Math.round(currentColor.r * brightness);
+  const g = Math.round(currentColor.g * brightness);
+  const b = Math.round(currentColor.b * brightness);
+  const c = `rgb(${r},${g},${b})`;
+  const c2 = `rgb(${Math.min(255,r+80)},${Math.min(255,g+80)},${Math.min(255,b+80)})`;
+  gem.style.setProperty('--gem-color', c);
+  diamond3d.style.setProperty('--ring-color', c);
+  diamond3d.style.setProperty('--ring-color2', c2);
+}
+
+function updateHandStatus() {
+  leftHandEl.textContent  = handState.Left.stable  === 'none' ? '—' : handState.Left.stable;
+  rightHandEl.textContent = handState.Right.stable === 'none' ? '—' : handState.Right.stable;
+  const any = Object.values(handState).find(s => s.stable !== 'none');
+  if (any) {
+    gestureLabel.textContent = any.stable.toUpperCase();
+    gestureLabel.classList.add('show');
+  } else {
+    gestureLabel.classList.remove('show');
+  }
+}
+
+/* ============================================================
+ * TOAST
+ * ============================================================ */
+let toastTimer = null;
+function showToast(msg) {
+  toastEl.textContent = msg;
+  toastEl.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toastEl.classList.remove('show'), 1400);
+}
+
+/* ============================================================
+ * MEDIAPIPE
+ * ============================================================ */
+const hands = new Hands({
+  locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`,
+});
+hands.setOptions({
+  maxNumHands: 2,
+  modelComplexity: 0,        // faster
+  minDetectionConfidence: 0.6,
+  minTrackingConfidence: 0.55,
+});
+
+hands.onResults(results => {
+  if (overlay.width !== video.videoWidth) {
+    overlay.width = video.videoWidth;
+    overlay.height = video.videoHeight;
+  }
+
+  const handsData = [];
+  let leftHandData = null;
+  let rightHandData = null;
+
+  if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+    results.multiHandLandmarks.forEach((lm, i) => {
+      const handedness = results.multiHandedness?.[i]?.label || 'Right';
+      const mirrored = handedness === 'Left' ? 'Right' : 'Left';
+      const entry = { landmarks: lm, handedness: mirrored };
+      handsData.push(entry);
+      if (mirrored === 'Left') leftHandData = entry;
+      else rightHandData = entry;
+    });
+  }
+
+  const seen = new Set(handsData.map(h => h.handedness));
+  for (const k of ['Left', 'Right']) {
+    if (!seen.has(k)) {
+      handState[k].gesture = 'none';
+      handState[k].stable  = 'none';
+      handState[k].holdStart = 0;
+    }
+  }
+
+  for (const h of handsData) {
+    const s = handState[h.handedness];
+    processHand(h.handedness, h.landmarks);
+  }
+
+  processCombo(leftHandData, rightHandData);
+  drawHands(handsData);
+  updateHandStatus();
+  tickRainbow(performance.now());
+});
+
+/* ============================================================
+ * CAMERA
+ * ============================================================ */
+async function startCamera() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { width: 1280, height: 720, facingMode: 'user' },
+    });
+    video.srcObject = stream;
+    await video.play();
+    const camera = new Camera(video, {
+      onFrame: async () => { await hands.send({ image: video }); },
+      width: 1280,
+      height: 720,
+    });
+    camera.start();
+  } catch (e) {
+    console.error(e);
+    alert('Camera error: ' + e.message);
+  }
+}
+
+/* ============================================================
+ * SLIDER
+ * ============================================================ */
+brightSlider.addEventListener('input', e => {
+  brightness = parseInt(e.target.value) / 100;
+  brightVal.textContent = e.target.value + '%';
+  diamondScale = 0.6 + brightness * 1.2;
+  diamondStage.style.transform = `scale(${diamondScale})`;
+  updateDiamondColors();
+  sendRGB(currentColor, brightness, true);
+});
+
+/* ============================================================
+ * INIT
+ * ============================================================ */
+updateDiamondColors();
+connectWS();
+startCamera();
+</script>
+</body>
+</html>
